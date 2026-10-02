@@ -31,7 +31,9 @@ const refunds=['REFUNDED','PARTIAL_REFUNDED'];
 const known=new Set([...unpaid,'CONFIRMED','REJECTED','CANCELED','CANCELLED','REVERSING','REFUNDING','REVERSED','PARTIAL_REVERSED','DEADLINE_EXPIRED','AUTH_FAIL',...refunds]);
 const rank={NEW:1,FORM_SHOWED:2,AUTHORIZING:3,'3DS_CHECKING':4,'3DS_CHECKED':5,AUTHORIZED:6,CONFIRMING:7,CONFIRMED:8};
 const requestKey=v=>{if(typeof v!=='string'||!(/^[a-zA-Z0-9-]{8,80}$/).test(v))throw fail(400,'Нужен ключ операции');return v;};
-const validUrl=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&['tbank.ru','tinkoff.ru'].some(host=>u.hostname===host||u.hostname.endsWith('.'+host));}catch{return false;}};
+// Current DEMO Init responses also use this exact hosted checkout domain.
+// Keep the extra host narrow: arbitrary tbank-online.com subdomains are not trusted.
+const validUrl=value=>{try{if(typeof value!=='string'||value.length>4096)return false;const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&(u.hostname==='pay.tbank-online.com'||['tbank.ru','tinkoff.ru'].some(host=>u.hostname===host||u.hostname.endsWith('.'+host)));}catch{return false;}};
 export function createPaymentService(store,config=paymentConfig({}),transport=null){
  const db=store.db,inflight=new Map();
  // Behind a tunnel the public address changes: without APP_PUBLIC_URL the tunnel watchdog keeps the current one in meta.
@@ -66,7 +68,10 @@ export function createPaymentService(store,config=paymentConfig({}),transport=nu
  function applyState(p,data,origin){
   const status=data.Status;
   if(data.TerminalKey!==p.terminal_key||String(data.OrderId)!==p.order_id||!/^\d{1,20}$/.test(String(data.PaymentId))||(p.bank_payment_id&&String(data.PaymentId)!==p.bank_payment_id))throw fail(400,'Платёж не соответствует заказу');
-  if(!Number.isSafeInteger(data.Amount)||(!refunds.includes(status)&&data.Amount!==p.amount)||(refunds.includes(status)&&(data.Amount<0||data.Amount>p.amount)))throw fail(400,'Сумма платежа не соответствует счёту');
+  // GetState reports Amount=0 after canceling a NEW invoice. This exception is
+  // only for cancellation; a successful payment must still match the full sum.
+  const canceledZero=['CANCELED','CANCELLED'].includes(status)&&data.Amount===0;
+  if(!Number.isSafeInteger(data.Amount)||(!refunds.includes(status)&&!canceledZero&&data.Amount!==p.amount)||(refunds.includes(status)&&(data.Amount<0||data.Amount>p.amount)))throw fail(400,'Сумма платежа не соответствует счёту');
   if(!known.has(status))throw fail(400,'Неизвестный статус платежа');
   if(status==='CONFIRMED'&&(data.Success!==true||String(data.ErrorCode??'0')!=='0'))throw fail(400,'Оплата не подтверждена');
   return store.transaction(()=>{
@@ -114,8 +119,14 @@ export function createPaymentService(store,config=paymentConfig({}),transport=nu
    try{
     const base=publicUrl().replace(/\/$/,'');
     const data=await call('Init',{Amount:amount,OrderId:orderId,Description:description,PayType:'O',Language:'ru',NotificationURL:base+'/webhooks/tbank',SuccessURL:base+'/payment/result',FailURL:base+'/payment/result',...(receipt?{Receipt:receipt}:{})});
-    if(!validUrl(data.PaymentURL))throw fail(502,'Банк вернул некорректную ссылку оплаты');
     applyState(get(id),data,'Init');
+    // A rejected checkout link does not mean Init is unknown. Retain the verified
+    // bank identity/status so GetState and signed callbacks can still reconcile it.
+    if(!validUrl(data.PaymentURL)){
+     const message='Банк создал счёт, но ссылка оплаты отсутствует или её адрес не разрешён. Статус можно проверить в банке; новый счёт не создан.';
+     db.prepare('UPDATE payments SET last_error=?,updated_at=? WHERE id=?').run(message,new Date().toISOString(),id);
+     throw fail(502,message);
+    }
     return store.transaction(()=>{
      db.prepare('UPDATE payments SET payment_url=?,updated_at=? WHERE id=?').run(data.PaymentURL,new Date().toISOString(),id);
      store.activity(leadId,user.username,`Выставлен тестовый счёт ${(amount/100).toFixed(2)} ₽`);

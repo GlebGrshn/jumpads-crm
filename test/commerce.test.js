@@ -91,3 +91,41 @@ test('a bank that cannot be reached at all leaves no uncertain invoice, so it ca
   await assert.rejects(service.create(lead.id,invoice(),actor),/соединение не установлено/);assert.equal(calls,2);
  }finally{s.close();}
 });
+
+test('current T-Bank hosted checkout URL is accepted without widening to lookalike hosts',async()=>{
+ const s=openStore();try{
+  const lead=s.create({name:'Test',contact:'@test_url',request:'Test'}),bank=transport();
+  const service=createPaymentService(s,config,async(method,payload)=>({...await bank.call(method,payload),PaymentURL:'https://pay.tbank-online.com/test-checkout'}));
+  const p=await service.create(lead.id,invoice(),actor);assert.equal(p.status,'NEW');assert.equal(p.payment_url,'https://pay.tbank-online.com/test-checkout');assert.ok(p.bank_payment_id);
+ }finally{s.close();}
+});
+test('invalid checkout links stay blocked but preserve verified bank state and prevent duplicate Init',async()=>{
+ for(const url of ['https://pay.tbank-online.com.evil.test/pay','https://evil.tbank-online.com/pay','http://pay.tbank-online.com/pay','https://user:pass@pay.tbank-online.com/pay','https://pay.tbank-online.com:444/pay','javascript:alert(1)',null]){
+  const s=openStore();try{
+   const lead=s.create({name:'Test',contact:'@test_bad_url',request:'Test'}),bank=transport();
+   const service=createPaymentService(s,config,async(method,payload)=>({...await bank.call(method,payload),PaymentURL:url}));
+   await assert.rejects(service.create(lead.id,invoice(),actor),/адрес не разрешён/);
+   const p=service.list(lead.id)[0];assert.equal(p.status,'NEW');assert.ok(p.bank_payment_id);assert.equal(p.payment_url,null);assert.match(p.last_error,/ссылка оплаты/);
+   await assert.rejects(service.create(lead.id,invoice(),actor),/незавершённый счёт/);assert.equal(bank.requests.filter(r=>r.method==='Init').length,1);
+   assert.equal((await service.sync(p.id)).status,'NEW');assert.equal(s.get(lead.id).paid,0);
+  }finally{s.close();}
+ }
+});
+test('an untrusted Init identity is not stored even if its checkout host is allowed',async()=>{
+ const s=openStore();try{
+  const lead=s.create({name:'Test',contact:'@test_identity',request:'Test'}),bank=transport();
+  const service=createPaymentService(s,config,async(method,payload)=>({...await bank.call(method,payload),OrderId:'wrong-order',PaymentURL:'https://pay.tbank-online.com/pay'}));
+  await assert.rejects(service.create(lead.id,invoice(),actor),/не соответствует заказу/);const p=service.list(lead.id)[0];assert.equal(p.bank_payment_id,null);assert.equal(p.payment_url,null);assert.equal(p.status,'INIT_UNKNOWN');
+ }finally{s.close();}
+});
+
+test('bank cancellation with zero remaining amount clears the unfinished invoice without marking it paid',async()=>{
+ const s=openStore();try{
+  const lead=s.create({name:'Test',contact:'@cancel_zero',request:'Test'}),bank=transport(),service=createPaymentService(s,config,bank.call);
+  const p=await service.create(lead.id,invoice(),actor);
+  assert.throws(()=>service.webhook(signed(p,'CONFIRMED',{Amount:0})),/Сумма платежа/);
+  bank.states.set(p.bank_payment_id,{...bank.states.get(p.bank_payment_id),Status:'CANCELED',Amount:0});
+  const canceled=await service.sync(p.id);assert.equal(canceled.status,'CANCELED');assert.equal(canceled.amount,12345);assert.equal(s.get(lead.id).paid,0);
+  const next=await service.create(lead.id,invoice(),actor);assert.equal(next.status,'NEW');assert.notEqual(next.id,p.id);
+ }finally{s.close();}
+});
