@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { extendStore } from './crm.js';
+import { extendStore,fail } from './crm.js';
 export function openStore(path = ':memory:') {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
@@ -15,8 +15,15 @@ export function openStore(path = ':memory:') {
   const notifyOwner = lead => store.notifyUsers([lead.owner_id], `🙋 Вам назначен лид: ${lead.name}\n${lead.request.slice(0, 500)}`, { inline_keyboard: [[{ text: 'Открыть', callback_data: `ld:${lead.id}` }]] });
   const store = {
     db,
-    list: () => db.prepare('SELECT * FROM leads ORDER BY created_at DESC, rowid DESC').all().map(decode),
+    list: () => db.prepare('SELECT * FROM leads WHERE deleted_at IS NULL ORDER BY created_at DESC, rowid DESC').all().map(decode),
     get: id => decode(db.prepare('SELECT * FROM leads WHERE id=?').get(id)),
+    remove(id,actor) {
+      const lead=store.get(id);if(!lead)throw fail(404,'Лид не найден');if(lead.deleted_at)return;
+      store.transaction(()=>{
+        db.prepare('UPDATE leads SET deleted_at=?,archived=1 WHERE id=?').run(new Date().toISOString(),id);
+        store.activity(id,actor,'Лид удалён из CRM. История, задачи и платежи сохранены.');
+      });
+    },
     // actorId: who made the change, so people are not notified about leads they assigned to themselves.
     create(input, source = 'manual', actorId = null) {
       const v = validateLead(input);
@@ -28,6 +35,7 @@ export function openStore(path = ':memory:') {
     update(id, input, actorId = null) {
       const old = store.get(id);
       if (!old) return null;
+      if(old.deleted_at)throw fail(404,'Лид удалён');
       const v = validateLead({...old,...input});
       db.prepare('UPDATE leads SET name=?,contact=?,request=?,status=?,tags=?,company=?,budget=?,owner_id=?,notes=? WHERE id=?').run(v.name,v.contact,v.request,v.status,JSON.stringify(v.tags),v.company,v.budget,v.owner_id,v.notes,id);
       if (v.owner_id && v.owner_id !== old.owner_id && v.owner_id !== actorId) notifyOwner({ ...v, id });

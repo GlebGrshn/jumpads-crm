@@ -18,7 +18,7 @@ const pairs=buttons=>buttons.reduce((rows,b,i)=>{if(i%2)rows[rows.length-1].push
 const splitTags=text=>text.split(',').map(t=>t.trim()).filter(Boolean);
 const can=(staff,permission)=>permissions[staff.role]?.includes(permission);
 const requireWrite=staff=>{if(!can(staff,'leads:write'))throw fail(403,'Роль наблюдателя: только просмотр');};
-const getLead=(store,id)=>{const lead=store.get(id);if(!lead)throw fail(404,'Лид не найден');return lead;};
+const getLead=(store,id)=>{const lead=store.get(id);if(!lead||lead.deleted_at)throw fail(404,'Лид не найден или удалён');return lead;};
 const actor=c=>`${c.staff.username} (Telegram)`;
 const active=store=>store.list().filter(l=>!l.archived);
 

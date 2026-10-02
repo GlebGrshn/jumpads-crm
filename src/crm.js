@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { initCommerceStore } from './commerce-store.js';
 const scrypt=promisify(scryptCallback);
 export const roles=['admin','manager','observer'];
-export const permissions={admin:['leads:write','leads:archive','tasks:write','tasks:all','chat:write','users:roles'],manager:['leads:write','tasks:write','chat:write'],observer:[]};
+export const permissions={admin:['leads:write','leads:archive','leads:delete','tasks:write','tasks:all','chat:write','users:roles'],manager:['leads:write','tasks:write','chat:write'],observer:[]};
 export const fail=(status,message,extra={})=>Object.assign(new Error(message),{status,...extra});
 export const hash=value=>createHash('sha256').update(value).digest('hex');
 export const normalizeContact=value=>{
@@ -24,7 +24,7 @@ const taskButtons=(taskId,lead)=>({inline_keyboard:[[{text:'✅ Выполнен
 export function extendStore(store) {
  const db=store.db;
  const columns=new Set(db.prepare('PRAGMA table_info(leads)').all().map(c=>c.name));
- for(const [name,type] of Object.entries({company:"TEXT NOT NULL DEFAULT ''",budget:'REAL NOT NULL DEFAULT 0',owner_id:'TEXT',notes:"TEXT NOT NULL DEFAULT ''",archived:'INTEGER NOT NULL DEFAULT 0',telegram_chat_id:'TEXT'}))if(!columns.has(name))db.exec(`ALTER TABLE leads ADD COLUMN ${name} ${type}`);
+ for(const [name,type] of Object.entries({company:"TEXT NOT NULL DEFAULT ''",budget:'REAL NOT NULL DEFAULT 0',owner_id:'TEXT',notes:"TEXT NOT NULL DEFAULT ''",archived:'INTEGER NOT NULL DEFAULT 0',deleted_at:'TEXT',telegram_chat_id:'TEXT'}))if(!columns.has(name))db.exec(`ALTER TABLE leads ADD COLUMN ${name} ${type}`);
  const outboxColumns=db.prepare('PRAGMA table_info(outbox)').all();
  if(!outboxColumns.some(c=>c.name==='message_id'))db.exec('ALTER TABLE outbox ADD COLUMN message_id TEXT');
  db.exec(`CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT UNIQUE COLLATE NOCASE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -165,4 +165,3 @@ export function extendStore(store) {
  });
  return store;
 }
-

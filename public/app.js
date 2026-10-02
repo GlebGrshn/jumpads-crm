@@ -78,6 +78,7 @@ async function load(){
  finally{loading=false;$('refresh').disabled=false;}
 }
 async function openEditor(id=null){
+ $('delete-lead').hidden=!id||!can('leads:delete');
  editing=id;leadKey=crypto.randomUUID();const lead=leads.find(l=>l.id===id);if(id&&!lead){toast('Лид не найден');return;}
  $('invite-result').hidden=true;$('client-profile').textContent='';$('lead-paid-badge').textContent=lead?.paid?'Оплачено '+money(lead.paid_amount/100):'Не оплачено';$('lead-paid-badge').className=lead?.paid?'badge paid':'badge';$('lead-invite').hidden=!can('leads:write');$('lead-client-chat').hidden=!lead?.client_chat_id;
  $('lead-form').reset();for(const key of ['name','contact','request','company','notes'])$(key).value=lead?.[key]??'';
@@ -150,6 +151,12 @@ $('lead-form').onsubmit=async e=>{
 };
 $('lead-form').addEventListener('input',()=>{leadKey=crypto.randomUUID();});
 $('archive-lead').onclick=handle(async()=>{const lead=leads.find(l=>l.id===editing);await send(`/api/leads/${editing}/archive`,'PATCH',{archived:!lead.archived});$('editor').close();await load();toast(lead.archived?'Лид восстановлен':'Лид в архиве');});
+$('delete-lead').onclick=handle(async()=>{
+ const lead=leads.find(l=>l.id===editing);if(!lead)return;
+ if(!confirm(`Удалить лида «${lead.name}»?\n\nКарточка исчезнет из списка, канбана и архива. Связанные задачи, переписка и платежи сохранятся.`))return;
+ $('delete-lead').disabled=true;
+ try{await send(`/api/leads/${lead.id}`,'DELETE',{confirm:true});$('editor').close();await load();toast('Лид удалён');}finally{$('delete-lead').disabled=false;}
+});
 $('lead-task').onclick=()=>{const leadId=editing;$('editor').close();openTask(null,leadId);};
 $('lead-chat').onclick=()=>{const lead=leads.find(l=>l.id===editing);$('editor').close();chooseChat('telegram',lead.telegram_chat_id);};
 $('task-form').onsubmit=async e=>{
@@ -261,4 +268,3 @@ $('broadcast-send').onclick=async()=>{
  try{const result=await send(`/api/campaigns/${campaignDraft.id}/send`,'POST',{});toast(result.alreadySent?'Эта рассылка уже отправлена':`В очереди: ${result.queued}`);resetCampaignPreview();await campaignHistory();}
  catch(err){$('broadcast-error').textContent=err.message;}finally{$('broadcast-send').disabled=false;}
 };
-

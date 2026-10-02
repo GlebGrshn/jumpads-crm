@@ -29,10 +29,11 @@ export function acceptClientUpdate(store,update){
   if(m?.chat?.type==='private'&&Number.isSafeInteger(m.from?.id)&&m.chat.id===m.from.id&&!m.from.is_bot){
    const chat=String(m.chat.id),userId=String(m.from.id),text=(m.text??'').trim(),now=new Date().toISOString();
    let member=db.prepare('SELECT * FROM client_members WHERE user_id=?').get(userId),lead=member?store.get(member.lead_id):null;
+   if(lead?.deleted_at)lead=null;
    const start=/^\/start(?:@\w+)?(?:\s+c_([\w-]+))?$/.exec(text);
    let invite=start?.[1]?db.prepare('SELECT * FROM client_invites WHERE token_hash=? AND expires_at>?').get(hash(start[1]),Date.now()):null;
    const target=invite?store.get(invite.lead_id):null;
-   const validInvite=target&&(!invite.used_by||invite.used_by===userId)&&(!target.client_chat_id||target.client_chat_id===chat)&&(!member||member.lead_id===target.id)&&(!target.telegram_chat_id||target.telegram_chat_id===chat);
+   const validInvite=target&&!target.deleted_at&&(!invite.used_by||invite.used_by===userId)&&(!target.client_chat_id||target.client_chat_id===chat)&&(!member||member.lead_id===target.id)&&(!target.telegram_chat_id||target.telegram_chat_id===chat);
    if(validInvite){lead=target;db.prepare('UPDATE client_invites SET used_by=? WHERE token_hash=?').run(userId,invite.token_hash);}
    // A request left earlier in the former intake bot belongs to the same person.
    if(!lead)lead=store.list().find(l=>l.telegram_chat_id===chat&&!l.client_chat_id)??null;
@@ -63,7 +64,7 @@ export function acceptClientUpdate(store,update){
     else begin(`${warning}Здравствуйте! Оставьте заявку агентству: имя, контакт и задача. Данные попадут менеджеру в CRM. Для отмены — /cancel.\n\n`);
    }else if(text==='/new'||text==='📝 Новая заявка')begin('Новая заявка. Для отмены — /cancel.\n\n');
    else if(text==='/cancel'){state=null;reply('Заявка отменена. Начать заново: /new',lead?keyboard:null);}
-   else if(['/stop','/subscribe','/unsubscribe','/payments'].includes(text)&&!member)reply('Сначала оставьте заявку: /new');
+   else if(['/stop','/subscribe','/unsubscribe','/payments'].includes(text)&&(!member||(text==='/payments'&&!lead)))reply('Сначала оставьте заявку: /new');
    else if(text==='/stop'){db.prepare('UPDATE client_members SET notifications_enabled=0,broadcast_enabled=0 WHERE chat_id=?').run(chat);reply('Автоматические уведомления и рассылки отключены. Включить уведомления: /start.');}
    else if(text==='/subscribe'){db.prepare('UPDATE client_members SET broadcast_enabled=1,notifications_enabled=1 WHERE chat_id=?').run(chat);reply('Вы подписались на рассылки. Отключить рассылки: /unsubscribe.');}
    else if(text==='/unsubscribe'){db.prepare('UPDATE client_members SET broadcast_enabled=0 WHERE chat_id=?').run(chat);reply('Рассылки отключены. Счета и уведомления по вашей заявке остаются включены.');}

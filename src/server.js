@@ -47,6 +47,8 @@ export function createApp({store,production=false,testRoles=!production,trustPro
     const user=store.authenticate(tokenOf(req));if(!user)throw fail(401,'Войдите в CRM');
     const permit=permission=>{if(!permissions[user.role].includes(permission))throw fail(403,'Недостаточно прав для этого действия');};
     const match=pattern=>pattern.exec(path);
+    const leadScope=match(/^\/api\/leads\/([a-f0-9-]+)(?:\/|$)/);
+    if(leadScope&&method!=='DELETE'&&store.get(leadScope[1])?.deleted_at)throw fail(404,'Лид удалён');
     if(path==='/api/automations'&&method==='GET'){permit('users:roles');return json(200,{rules:automation.list(),runs:automation.runs()});}
     if(path==='/api/automations/preview'&&method==='POST'){permit('users:roles');const input=await body();return json(200,automation.preview(input.rule,input.lead_id));}
     const autoRule=match(/^\/api\/automations\/([a-f0-9-]+)$/);
@@ -112,6 +114,10 @@ export function createApp({store,production=false,testRoles=!production,trustPro
      return json(200,store.list().filter(l=>(!tag||l.tags.includes(tag))&&(!status||l.status===status)&&`${l.name} ${l.contact} ${l.request} ${l.company}`.toLowerCase().includes(q)));
     }
     const leadRoute=match(/^\/api\/leads\/([a-f0-9-]+)$/);
+    if(leadRoute&&method==='DELETE'){
+     permit('leads:delete');const input=await body();if(input.confirm!==true)throw fail(400,'Подтвердите удаление лида');
+     store.remove(leadRoute[1],user.username);return json(200,{ok:true});
+    }
     if((path==='/api/leads'&&method==='POST')||(leadRoute&&method==='PATCH')){
      permit('leads:write');const input=await body();const old=leadRoute?store.get(leadRoute[1]):null;if(leadRoute&&!old)throw fail(404,'Лид не найден');
      let data;try{data=validateLead({...old,...input});}catch(e){throw fail(400,e.message);}

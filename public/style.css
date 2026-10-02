@@ -86,3 +86,5 @@ main{margin-left:214px;padding:0 28px 36px;max-width:none}header{height:70px;fon
 .how-to summary{cursor:pointer;font-weight:600}
 .how-to ol{margin:8px 0 0;padding-left:18px}
 .how-to li{margin:4px 0}
+
+.danger-button{color:var(--danger);border-color:var(--danger)}.danger-button:hover{background:#b4231812}
