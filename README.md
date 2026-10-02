@@ -94,7 +94,10 @@ npm test
 - `TRUST_PROXY=true` (CRM за Caddy), `APP_PUBLIC_URL=https://lushik.online` (уведомления Т-Банка), `TEST_ROLE_SELECTION=true` (тестовое задание: роль выбирается свободно).
 - Т-Банк использует сертификат НУЦ Минцифры: корень `certs/russian_trusted_root_ca.pem` (официальный файл с gu-st.ru) подключён только к запросам в банк. Если уведомление банка не дошло, CRM раз в минуту сама запрашивает статус неоплаченных счетов.
 
-Обновление кода: скопировать `src`, `public`, `certs`, `package.json`, `Dockerfile` в `/opt/jumpads` и выполнить `/opt/jumpads/deploy.sh`.
+Обновление кода: скопировать `src`, `public`, `certs`, `package.json`, `Dockerfile` в `/opt/jumpads` и выполнить `/opt/jumpads/deploy.sh`. Caddy пересоздаётся `deploy/caddy.sh`; журналы контейнеров ограничены 3 × 10 МБ.
+
+- **Резервные копии:** `deploy/backup.sh` ежедневно в 03:15 (cron `/etc/cron.d/jumpads-backup`) делает снимок SQLite без остановки CRM в `/opt/jumpads/backups`, хранит 14 дней. Восстановление: `/opt/jumpads/restore.sh /opt/jumpads/backups/crm-….sqlite.gz` — текущее состояние перед этим тоже сохраняется.
+- **Мониторинг:** `deploy/monitor.sh` каждые 5 минут (cron `/etc/cron.d/jumpads-monitor`) проверяет `https://lushik.online/health` и подключение обоих ботов. Проблему, которая держится две проверки подряд, и восстановление сообщает администраторам CRM в бот команды. Падение самого сервера так не заметить — для этого нужна внешняя проверка (например, UptimeRobot на `/health`).
 
 `tools/crm_tunnel.py` — прежний вариант публикации с ПК через SSH-туннель localhost.run; сейчас не используется. Личный Telegram-аккаунт (MTProto), вложения, приглашения, сброс пароля, произвольные этапы воронки и автоматические резервные копии остаются за пределами текущей версии.
 
