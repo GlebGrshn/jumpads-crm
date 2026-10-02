@@ -1,9 +1,7 @@
 # HTTPS certificates are issued and renewed automatically by Caddy (Let's Encrypt).
-lushik.online {
+# Serve both hosts during and after migration. The legacy hosting sends users
+# with a cached apex DNS record to www; redirecting www back would loop.
+lushik.online, www.lushik.online {
 	encode gzip
 	reverse_proxy 127.0.0.1:3000
-}
-
-www.lushik.online {
-	redir https://lushik.online{uri} permanent
 }

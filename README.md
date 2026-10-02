@@ -88,7 +88,8 @@ npm test
 
 Рабочая версия: **https://lushik.online** — VPS в Москве (Debian, Docker), один экземпляр процесса, база SQLite в томе `jumpads-data`.
 
-- `deploy/Caddyfile` — Caddy принимает HTTPS (сертификаты Let's Encrypt выпускаются и продлеваются сами), `www` и `http` перенаправляет на `https://lushik.online`, остальное проксирует в CRM на `127.0.0.1:3000`.
+- `deploy/Caddyfile` — Caddy принимает HTTPS (сертификаты Let's Encrypt выпускаются и продлеваются сами) на `lushik.online` и `www.lushik.online`, оба адреса проксирует в CRM на `127.0.0.1:3000`. HTTP перенаправляется на HTTPS.
+- `deploy/legacy-entry.html` — переход со старого хостинга на `https://www.lushik.online/` для посетителей с устаревшим DNS. Не возвращать редирект `www` → основной домен: это снова замкнёт переход на старую страницу. Подробности: [docs/migration-access.md](docs/migration-access.md).
 - `deploy/deploy.sh` — пересобирает образ из `/opt/jumpads` и пересоздаёт контейнер; данные сохраняются. Запускать после изменения кода или `.env`: Docker читает `.env` только при создании контейнера.
 - Контейнер CRM работает в сети сервера (`--network host`): с этого VPS Telegram доступен только по IPv6, которого нет в обычной сети Docker. Порт 3000 слушается только на `127.0.0.1`.
 - `TRUST_PROXY=true` (CRM за Caddy), `APP_PUBLIC_URL=https://lushik.online` (уведомления Т-Банка), `TEST_ROLE_SELECTION=true` (тестовое задание: роль выбирается свободно).
@@ -111,7 +112,6 @@ npm test
 - `src/server.js` — HTTP API и проверки прав.
 - `public/` — интерфейс.
 - `test/` — интеграционные проверки.
-- `docs/submission.md` — черновик для сдачи.
 
 ## Т-Банк, второй бот и рассылки
 
