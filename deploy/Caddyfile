@@ -1,0 +1,9 @@
+# HTTPS certificates are issued and renewed automatically by Caddy (Let's Encrypt).
+lushik.online {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}
+
+www.lushik.online {
+	redir https://lushik.online{uri} permanent
+}
